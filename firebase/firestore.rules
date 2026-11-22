@@ -1,0 +1,23 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function valid() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['data', 'rev', 'at'])
+        && d.keys().hasAll(['data', 'rev', 'at'])
+        && d.data is string && d.data.size() > 2 && d.data.size() < 60000
+        && d.rev is int && d.at == request.time;
+    }
+    match /maps/main {
+      allow read: if true;
+      allow create: if valid() && request.resource.data.rev == 1;
+      allow update: if valid() && request.resource.data.rev == resource.data.rev + 1;
+      allow delete: if false;
+    }
+    match /history/{id} {
+      allow read: if true;
+      allow create: if valid();
+      allow update, delete: if false;
+    }
+  }
+}

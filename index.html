@@ -72,6 +72,8 @@ button.s{font:inherit;border:0;cursor:pointer}
 var S=JSON.parse(document.getElementById('state').textContent);
 var app=document.getElementById('app');
 var editing=false,sel=-1,snap=null,art=null,dl=null,status='',statusErr=false,busy=false;
+var FB={key:'AIzaSyDCL11bCjUS6Wo6vLdP2sVBmKDVedJG2dM',project:'call-center-map'},LAYOUT=1,remote='loading',rUpd=null,rRev=0,stale=false;
+var NAME='projects/'+FB.project+'/databases/(default)/documents',DOCS='https://firestore.googleapis.com/v1/'+NAME;
 var KINDS=[['a','נציג/ה'],['m','מנהל/ת'],['r','חדר או תפקיד מטה'],['u','ללא שיוך']];
 var BLOCKS=[['h','','','','','','','w'],['','','','','','','',''],['','','','','','','',''],['','','','','','','','','','','w'],['','','','','','','','','','','',''],['w','','','','','','','','','','','',''],['w','','','','','',''],['','','','','','','',''],['w','','','','','','']];
 var OFFICE=['1/1/2/2','2/1/3/2','3/1/4/2','4/1/5/2','1/2/4/3','1/3/4/4','1/4/4/5','4/4/6/5','6/1/7/2','6/2/7/3','7/1/8/2','7/2/8/3','8/1/9/2','8/2/9/3','6/3/9/4','6/4/12/5','9/1/12/3','9/3/12/4','9/5/12/6','9/6/12/7','9/7/12/8'];
@@ -114,7 +116,7 @@ return wrap}
 function field(text,control){var f=el('label','field');f.appendChild(el('span','',text));f.appendChild(control);return f}
 function renderEditor(){
 var box=el('div','editor');
-if(sel<0){box.appendChild(el('span','hint','לוחצים על עמדה במפה כדי לשנות צוות, סוג או טקסט.'));return box}
+if(sel<0){box.appendChild(el('span','hint','לוחצים על עמדה במפה כדי לשנות צוות, סוג או טקסט.'+(remote==='ok'&&!art?' אחרי "שמירה לכולם" השינויים יופיעו אצל כל מי שפותח את הקישור.':'')));return box}
 var s=S.slots[sel];
 var kind=el('select');KINDS.forEach(function(k){var o=el('option','',k[1]);o.value=k[0];if(k[0]===s.k)o.selected=true;kind.appendChild(o)});
 kind.onchange=function(){s.k=kind.value;if((s.k==='a'||s.k==='m')&&!s.t)s.t=S.teams[0].id;if(s.k==='u')s.x='';render()};
@@ -129,10 +131,17 @@ function btn(text,pri,fn){var b=el('button','btn'+(pri?' pri':''),text);b.type='
 function renderBar(){
 var bar=el('div','bar');
 if(editing){
-bar.appendChild(btn(art?'שמירה':'שמירה כקובץ',true,save));
-bar.appendChild(btn('ביטול',false,function(){S=JSON.parse(snap);editing=false;sel=-1;status='';render()}));
+if(stale){
+bar.appendChild(btn('הורדת השינויים שלי כקובץ',true,download));
+bar.appendChild(btn('טעינת הגרסה העדכנית',false,function(){editing=false;sel=-1;stale=false;remote='loading';status='';render();loadRemote()}));
 }else{
-bar.appendChild(btn('עריכה',true,function(){snap=JSON.stringify(S);editing=true;status='';statusErr=false;render()}));
+bar.appendChild(btn(art?'שמירה':remote==='ok'?'שמירה לכולם':'שמירה כקובץ',true,save));
+bar.appendChild(btn('ביטול',false,function(){S=JSON.parse(snap);editing=false;sel=-1;status='';render()}));
+}
+}else{
+var eb=btn('עריכה',true,function(){snap=JSON.stringify(S);editing=true;status='';statusErr=false;render()});
+if(remote==='loading'&&!art){eb.disabled=true;eb.textContent='טוען…'}
+bar.appendChild(eb);
 if(dl||!window.claude)bar.appendChild(btn('הורדה כקובץ HTML',false,download));
 }
 if(status)bar.appendChild(el('span','status'+(statusErr?' err':''),status));
@@ -170,6 +179,7 @@ var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([html],{ty
 function download(){fileSave().then(function(){status='';render()},function(e){if(e&&e.code==='declined')return;status='ההורדה לא הצליחה. אפשר לנסות שוב.';statusErr=true;render()})}
 function save(){
 if(busy)return;var prev=S.updated;S.updated=today();
+if(!art&&remote==='ok')return saveRemote(prev);
 if(!art){fileSave().then(function(){editing=false;sel=-1;status='הקובץ המעודכן ירד למחשב.';statusErr=false;render()},function(){S.updated=prev;status='השמירה לא הצליחה. אפשר לנסות שוב.';statusErr=true;render()});return}
 busy=true;status='שומר…';statusErr=false;render();
 art.publish(buildDoc()).then(function(){busy=false},function(e){
@@ -179,7 +189,43 @@ if(code==='not_writer'||code==='not_granted'||code==='not_declared'||code==='con
 else if(code==='rate_limited')status='נשמרו יותר מדי גרסאות ברצף. כדאי לחכות דקה ולנסות שוב.';
 else status='השמירה לא הצליחה. אפשר לנסות שוב.';
 statusErr=true;render()})}
+function clean(o){
+if(!o||o.layout!==LAYOUT||!Array.isArray(o.slots)||o.slots.length!==S.slots.length)return null;
+var out=[];
+for(var i=0;i<o.slots.length;i++){
+var s=o.slots[i]||{},k=s.k,lead=k==='a'||k==='m';
+if(['a','m','r','u'].indexOf(k)<0)return null;
+var t=lead&&team(s.t)?s.t:null;if(lead&&!t)return null;
+out.push({k:k,t:t,x:k==='u'||typeof s.x!=='string'?'':s.x.trim().slice(0,40)})}
+return {title:typeof o.title==='string'&&o.title.trim()?o.title.trim().slice(0,80):S.title,updated:/^\d{4}-\d{2}-\d{2}$/.test(o.updated)?o.updated:S.updated,slots:out}}
+function getRemote(){
+return fetch(DOCS+'/maps/main?key='+FB.key,{cache:'no-store'}).then(function(r){
+if(r.status===404)return null;if(!r.ok)throw new Error(String(r.status));return r.json()})}
+function loadRemote(){
+getRemote().then(function(d){
+remote='ok';rUpd=null;rRev=0;if(!d)return;
+var f=d.fields||{},c=null;rUpd=d.updateTime;rRev=Number(f.rev&&f.rev.integerValue)||0;
+try{c=clean(JSON.parse(f.data.stringValue))}catch(e){}
+if(c){S.title=c.title;S.updated=c.updated;S.slots=c.slots}
+}).then(function(){status='';statusErr=false},function(){remote='off';status='לא הצלחנו לטעון את הגרסה המשותפת, ולכן מוצגת הגרסה השמורה בקובץ. שמירה תוריד קובץ.';statusErr=true}).then(render)}
+function saveRemote(prev){
+busy=true;status='שומר…';statusErr=false;render();
+var fields={data:{stringValue:JSON.stringify({layout:LAYOUT,title:S.title,updated:S.updated,slots:S.slots})},rev:{integerValue:String(rRev+1)}};
+var tr=[{fieldPath:'at',setToServerValue:'REQUEST_TIME'}],hid=String(rRev+1).padStart(6,'0')+'-'+Math.random().toString(36).slice(2,8);
+var body={writes:[{update:{name:NAME+'/maps/main',fields:fields},updateTransforms:tr,currentDocument:rUpd?{updateTime:rUpd}:{exists:false}},{update:{name:NAME+'/history/'+hid,fields:fields},updateTransforms:tr,currentDocument:{exists:false}}]};
+function fail(msg){
+getRemote().then(function(d){var r=d?Number(d.fields&&d.fields.rev&&d.fields.rev.integerValue)||0:0;return r!==rRev},function(){return false}).then(function(changed){
+busy=false;S.updated=prev;statusErr=true;
+if(changed){stale=true;status='מישהו אחר שמר שינויים בזמן שערכת, ולכן השינויים שלך לא נשמרו. אפשר להוריד אותם כקובץ, או לטעון את הגרסה העדכנית ולערוך שוב.'}else status=msg;
+render()})}
+fetch(DOCS+':commit?key='+FB.key,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(r){
+return r.json().catch(function(){return {}}).then(function(d){
+if(!r.ok)return fail(d.error&&d.error.status==='PERMISSION_DENIED'?'השמירה נדחתה. ייתכן שהשינוי חורג מהמבנה המותר.':'השמירה לא הצליחה. אפשר לנסות שוב.');
+busy=false;rRev++;rUpd=(d.writeResults&&d.writeResults[0]&&d.writeResults[0].updateTime)||d.commitTime||rUpd;
+editing=false;sel=-1;status='נשמר. כל מי שפותח את הקישור יראה את המפה המעודכנת.';statusErr=false;render()})
+},function(){fail('השמירה לא הצליחה. כדאי לבדוק את החיבור לאינטרנט ולנסות שוב.')})}
 render();
+loadRemote();
 window.addEventListener('resize',fit);
 if(window.claude&&window.claude.use){
 window.claude.use('artifact').then(function(a){art=a;if(a)render()},function(){});
