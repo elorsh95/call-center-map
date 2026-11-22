@@ -37,12 +37,11 @@ h1[contenteditable="true"]{outline:2px dashed var(--line2);outline-offset:6px;bo
 .chips{display:flex;flex-wrap:wrap;gap:8px}
 .chip{display:inline-flex;gap:8px;align-items:baseline;border-radius:999px;padding:6px 14px;font-size:15px;background:color-mix(in srgb,var(--c) 20%,var(--card));color:color-mix(in srgb,var(--c) 60%,var(--ink))}
 .chip b{font-weight:700}
-.staff{display:flex;flex-direction:column;gap:8px;padding-top:14px;margin-top:auto;border-top:1px solid var(--line)}
-.srow{display:flex;flex-wrap:wrap;gap:4px 18px;font-size:15px;color:var(--muted);align-items:baseline}
-.srow b{font-size:20px;color:var(--ink);font-weight:700;margin-inline-start:6px}
-.sbar{height:8px;border-radius:999px;background:color-mix(in srgb,var(--c) 18%,var(--card));overflow:hidden}
-.sbar i{display:block;height:100%;background:var(--c);border-radius:inherit}
-.sdate{font-size:13px;color:var(--muted)}
+.trio{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.trio div{display:flex;flex-direction:column;gap:6px;min-width:0}
+.trio b{font-size:clamp(32px,9vw,44px);line-height:1;font-weight:700}
+.trio span{font-size:14px;line-height:1.3;color:var(--muted)}
+.sdate{font-size:13px;color:var(--muted);margin-top:-4px}
 button.chip{font:inherit;font-size:15px;border:0;cursor:pointer;min-height:36px;align-items:center}
 button.chip:hover{background:color-mix(in srgb,var(--c) 32%,var(--card))}
 button.chip[aria-pressed="true"]{background:var(--c);color:#FFFFFF}
@@ -145,12 +144,11 @@ var card=el('div','card'+(focus&&!editing&&(con||(focus.type==='team'&&team(focu
 t.appendChild(dot);t.appendChild(el('span','',ce.name));
 card.style.setProperty('--c',ce.c);var tot=0,chips=el('div','chips');
 S.teams.filter(function(x){return x.center===ce.id}).forEach(function(x){var k=c[x.id]||0;tot+=k;var ch=toggle('button','chip','team:'+x.id,!!focus&&focus.type==='team'&&focus.id===x.id,function(){setFocus('team',x.id)});ch.style.setProperty('--c',x.c);ch.appendChild(el('span','',x.name));ch.appendChild(el('b','',String(k)));chips.appendChild(ch)});
-var num=el('div','num');num.appendChild(el('b','',String(tot)));num.appendChild(el('span','','עמדות נציגים'));
-card.appendChild(t);card.appendChild(num);card.appendChild(chips);
-if(ce.q>0&&ce.p!=null){var st=el('div','staff'),row=el('div','srow'),pc=Math.round(ce.p/ce.q*100);
-[['תקינה',ce.q],['נפשות',ce.p]].forEach(function(x){var sp=el('span','',x[0]);sp.appendChild(el('b','',String(x[1])));row.appendChild(sp)});
-var bar=el('div','sbar'),fill=el('i');fill.style.width=Math.min(100,pc)+'%';bar.setAttribute('role','img');bar.setAttribute('aria-label',pc+'% מהתקינה מאויש');bar.appendChild(fill);
-st.appendChild(row);st.appendChild(bar);st.appendChild(el('div','sdate',pc+'% מאויש'+(S.staffDate?' · מעודכן ל-'+heDate(S.staffDate):'')));card.appendChild(st)}
+card.appendChild(t);
+if(ce.q>0&&ce.p!=null){var trio=el('div','trio');[[ce.q,'תקינה מאושרת'],[ce.p,'נפשות בפועל'],[tot,'עמדות נציגים']].forEach(function(x){var d=el('div');d.appendChild(el('b','',String(x[0])));d.appendChild(el('span','',x[1]));trio.appendChild(d)});
+card.appendChild(trio);if(S.staffDate)card.appendChild(el('div','sdate','תקינה ונפשות מעודכנות ל-'+heDate(S.staffDate)))}
+else{var num=el('div','num');num.appendChild(el('b','',String(tot)));num.appendChild(el('span','','עמדות נציגים'));card.appendChild(num)}
+card.appendChild(chips);
 wrap.appendChild(card)});
 return wrap}
 function heDate(s){return new Date(s+'T12:00:00').toLocaleDateString('he-IL')}
