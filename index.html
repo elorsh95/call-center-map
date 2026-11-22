@@ -37,6 +37,17 @@ h1[contenteditable="true"]{outline:2px dashed var(--line2);outline-offset:6px;bo
 .chips{display:flex;flex-wrap:wrap;gap:8px}
 .chip{display:inline-flex;gap:8px;align-items:baseline;border-radius:999px;padding:6px 14px;font-size:15px;background:color-mix(in srgb,var(--c) 20%,var(--card));color:color-mix(in srgb,var(--c) 60%,var(--ink))}
 .chip b{font-weight:700}
+button.chip{font:inherit;font-size:15px;border:0;cursor:pointer;min-height:36px;align-items:center}
+button.chip:hover{background:color-mix(in srgb,var(--c) 32%,var(--card))}
+button.chip[aria-pressed="true"]{background:var(--c);color:#FFFFFF}
+button.t{font:inherit;font-size:16px;font-weight:500;color:var(--muted);background:none;border:0;padding:4px 0;margin:-4px 0;cursor:pointer;text-align:start;align-self:flex-start;border-radius:6px}
+button.t:hover span:last-child{text-decoration:underline;text-underline-offset:4px}
+button.t[aria-pressed="true"]{color:var(--ink);font-weight:700}
+.card.on{box-shadow:inset 0 0 0 2px var(--c)}
+button.chip:focus-visible,button.t:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.cards-hint{margin:-16px 0 0;font-size:14px;color:var(--muted)}
+.s.dim{opacity:.22}
+.focus{display:flex;flex-wrap:wrap;align-items:center;gap:12px;font-size:15px;color:var(--ink)}
 .panel{background:var(--card);border-radius:16px;box-shadow:inset 0 0 0 1px var(--line);padding:32px;display:flex;flex-direction:column;gap:24px}
 .ptop{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:12px}
 h2{margin:0;font-size:28px;font-weight:700}
@@ -73,7 +84,7 @@ button.s{font:inherit;border:0;cursor:pointer}
 <script id="code">(function(){
 var S=JSON.parse(document.getElementById('state').textContent);
 var app=document.getElementById('app');
-var editing=false,sel=-1,snap=null,art=null,dl=null,status='',statusErr=false,busy=false;
+var focus=null,focusKey=null,editing=false,sel=-1,snap=null,art=null,dl=null,status='',statusErr=false,busy=false;
 var FB={key:'AIzaSyDCL11bCjUS6Wo6vLdP2sVBmKDVedJG2dM',project:'call-center-map'},LAYOUT=1,remote='loading',rUpd=null,rRev=0,stale=false;
 var NAME='projects/'+FB.project+'/databases/(default)/documents',DOCS='https://firestore.googleapis.com/v1/'+NAME;
 var KINDS=[['a','נציג/ה'],['m','מנהל/ת צוות'],['h','אחמ״ש'],['c','מנהל/ת מוקד'],['r','חדר או תפקיד מטה'],['u','ללא שיוך']];
@@ -88,6 +99,7 @@ function counts(){var c={};S.slots.forEach(function(s){if(s.k==='a'&&s.t)c[s.t]=
 function cell(i,span,area,minH){
 var s=S.slots[i],e=el(editing?'button':'div','s'+(s.k==='a'?'':' '+(lead(s.k)?'m':s.k))+(i===sel?' sel':''),label(s));
 var t=team(s.t);if(t&&lead(s.k))e.style.setProperty('--c',t.c);
+if(focus&&!editing&&!inFocus(s))e.className+=' dim';
 if(span==='w')e.style.gridColumn='span 2';if(span==='h')e.style.gridRow='span 2';
 if(area)e.style.gridArea=area;if(minH)e.style.minHeight=minH+'px';
 if(editing){e.type='button';e.onclick=function(){sel=i;render()}}
@@ -107,13 +119,22 @@ var c4=el('div','col');c4.style.width='76px';for(var j=0;j<2;j++)c4.appendChild(
 strip.appendChild(sb);strip.appendChild(c2);strip.appendChild(gap);strip.appendChild(c3);strip.appendChild(c4);
 right.appendChild(off);right.appendChild(strip);map.appendChild(left);map.appendChild(right);
 var sc=el('div','scroll');sc.appendChild(map);return sc}
+function inFocus(s){var t=team(s.t);if(!t)return false;
+if(focus.type==='team')return s.t===focus.id&&(s.k==='a'||s.k==='m');
+return t.center===focus.id&&lead(s.k)}
+function focusName(){var L=focus.type==='team'?S.teams:S.centers;for(var i=0;i<L.length;i++)if(L[i].id===focus.id)return L[i].name;return ''}
+function setFocus(type,id){var key=type+':'+id,on=!(focus&&focus.type===type&&focus.id===id);focus=on?{type:type,id:id}:null;focusKey=key;render();
+var b=document.querySelector('[data-f="'+key+'"]');if(b)b.focus({preventScroll:true});
+if(on){var sc=document.querySelector('.scroll');if(sc){var r=sc.getBoundingClientRect();if(r.top>window.innerHeight-120||r.bottom<80)document.querySelector('.panel').scrollIntoView({behavior:'smooth',block:'start'})}}}
+function toggle(tag,cls,key,pressed,fn){var e=el(editing?'span':tag,cls);if(!editing){e.type='button';e.setAttribute('aria-pressed',pressed?'true':'false');e.setAttribute('data-f',key);e.onclick=fn}return e}
 function renderCards(){
 var c=counts(),wrap=el('section','cards');
 S.centers.forEach(function(ce){
-var card=el('div','card'),t=el('div','t'),dot=el('span','dot');dot.style.setProperty('--c',ce.c);dot.setAttribute('aria-hidden','true');
+var con=!!focus&&focus.type==='center'&&focus.id===ce.id;
+var card=el('div','card'+(focus&&!editing&&(con||(focus.type==='team'&&team(focus.id)&&team(focus.id).center===ce.id))?' on':'')),t=toggle('button','t','center:'+ce.id,con,function(){setFocus('center',ce.id)}),dot=el('span','dot');dot.style.setProperty('--c',ce.c);dot.setAttribute('aria-hidden','true');
 t.appendChild(dot);t.appendChild(el('span','',ce.name));
-var tot=0,chips=el('div','chips');
-S.teams.filter(function(x){return x.center===ce.id}).forEach(function(x){var k=c[x.id]||0;tot+=k;var ch=el('span','chip');ch.style.setProperty('--c',x.c);ch.appendChild(el('span','',x.name));ch.appendChild(el('b','',String(k)));chips.appendChild(ch)});
+card.style.setProperty('--c',ce.c);var tot=0,chips=el('div','chips');
+S.teams.filter(function(x){return x.center===ce.id}).forEach(function(x){var k=c[x.id]||0;tot+=k;var ch=toggle('button','chip','team:'+x.id,!!focus&&focus.type==='team'&&focus.id===x.id,function(){setFocus('team',x.id)});ch.style.setProperty('--c',x.c);ch.appendChild(el('span','',x.name));ch.appendChild(el('b','',String(k)));chips.appendChild(ch)});
 var num=el('div','num');num.appendChild(el('b','',String(tot)));num.appendChild(el('span','','נציגים'));
 card.appendChild(t);card.appendChild(num);card.appendChild(chips);wrap.appendChild(card)});
 return wrap}
@@ -143,7 +164,7 @@ bar.appendChild(btn(art?'שמירה':remote==='ok'?'שמירה לכולם':'שמ
 bar.appendChild(btn('ביטול',false,function(){S=JSON.parse(snap);editing=false;sel=-1;status='';render()}));
 }
 }else{
-var eb=btn('עריכה',true,function(){snap=JSON.stringify(S);editing=true;status='';statusErr=false;render()});
+var eb=btn('עריכה',true,function(){snap=JSON.stringify(S);editing=true;focus=null;status='';statusErr=false;render()});
 if(remote==='loading'&&!art){eb.disabled=true;eb.textContent='טוען…'}
 bar.appendChild(eb);
 if(dl||!window.claude)bar.appendChild(btn('הורדה כקובץ HTML',false,download));
@@ -160,11 +181,13 @@ var c=counts(),tot=0,nt=0;for(var k in c){tot+=c[k];nt++}
 hl.appendChild(el('p','sub',tot+' עמדות נציגים, '+nt+' צוותים ו-'+S.centers.length+' מוקדים בקומה אחת. כל מוקד בצבע משלו, ומנהלים בגוון כהה.'));
 head.appendChild(hl);head.appendChild(renderBar());wrap.appendChild(head);
 wrap.appendChild(renderCards());
+if(!editing)wrap.appendChild(el('p','cards-hint','לוחצים על צוות או על שם המוקד כדי לראות איפה הם יושבים במפה.'));
 var panel=el('section','panel'),top=el('div','ptop');top.appendChild(el('h2','','מפת הקומה'));
 var lg=el('div','legend');
 var nk={};S.slots.forEach(function(s){nk[s.k]=(nk[s.k]||0)+1});
 [['עמדות נציגים','background:color-mix(in srgb,var(--accent) 22%,var(--card))',nk.a||0],['עמדות מנהלי צוות','background:var(--accent)',nk.m||0],['אחמ״ש או מנהל/ת מוקד','background:var(--accent)'],['חדר או תפקיד מטה','border:1px solid var(--line2)'],['עמדה ללא שיוך','border:1px dashed var(--muted)']].forEach(function(x){var sp=el('span',x.length>2?'cnt':''),i=el('i');i.style.cssText=x[1];i.setAttribute('aria-hidden','true');sp.appendChild(i);if(x.length>2)sp.appendChild(el('b','',String(x[2])));sp.appendChild(document.createTextNode(x[0]));lg.appendChild(sp)});
 top.appendChild(lg);panel.appendChild(top);
+if(focus&&!editing){var fb=el('div','focus');fb.appendChild(el('span','','מודגש במפה: '));fb.lastChild.appendChild(el('b','',focusName()));fb.appendChild(btn('הצגת כל המפה',false,function(){focus=null;render()}));panel.appendChild(fb)}
 if(editing)panel.appendChild(renderEditor());
 panel.appendChild(renderMap());wrap.appendChild(panel);
 var upd=S.updated?new Date(S.updated+'T12:00:00').toLocaleDateString('he-IL'):'טרם עודכן';
