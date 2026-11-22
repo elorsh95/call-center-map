@@ -60,7 +60,11 @@ h2{margin:0;font-size:28px;font-weight:700}
 .editor .hint{font-size:15px;color:var(--muted);align-self:center}
 .field{display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--muted)}
 .field select,.field input{font:inherit;font-size:15px;min-height:44px;padding:0 12px;border-radius:10px;border:1px solid var(--line2);background:var(--card);color:var(--ink);min-width:170px}
-.scroll{overflow-x:auto;padding:4px}
+.scroll{overflow-x:auto;padding:4px;overscroll-behavior-x:contain}
+.mapbar,.maphint{display:none}
+.panel.narrow .mapbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.panel.narrow .maphint{display:block;margin:-12px 0 0;font-size:14px;color:var(--muted)}
+@media (max-width:640px){.wrap{padding:32px 16px 48px;gap:24px}.panel{padding:20px 16px;gap:20px}.card{padding:20px}h2{font-size:24px}}
 .map{display:flex;gap:32px;width:1288px}
 .left{display:grid;grid-template-columns:repeat(3,156px);gap:28px 24px;align-content:start}
 .blk{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;width:156px;align-content:start}
@@ -84,7 +88,7 @@ button.s{font:inherit;border:0;cursor:pointer}
 <script id="code">(function(){
 var S=JSON.parse(document.getElementById('state').textContent);
 var app=document.getElementById('app');
-var focus=null,focusKey=null,editing=false,sel=-1,snap=null,art=null,dl=null,status='',statusErr=false,busy=false;
+var overview=false,focus=null,focusKey=null,editing=false,sel=-1,snap=null,art=null,dl=null,status='',statusErr=false,busy=false;
 var FB={key:'AIzaSyDCL11bCjUS6Wo6vLdP2sVBmKDVedJG2dM',project:'call-center-map'},LAYOUT=1,remote='loading',rUpd=null,rRev=0,stale=false;
 var NAME='projects/'+FB.project+'/databases/(default)/documents',DOCS='https://firestore.googleapis.com/v1/'+NAME;
 var KINDS=[['a','נציג/ה'],['m','מנהל/ת צוות'],['h','אחמ״ש'],['c','מנהל/ת מוקד'],['r','חדר או תפקיד מטה'],['u','ללא שיוך']];
@@ -125,7 +129,7 @@ return t.center===focus.id&&lead(s.k)}
 function focusName(){var L=focus.type==='team'?S.teams:S.centers;for(var i=0;i<L.length;i++)if(L[i].id===focus.id)return L[i].name;return ''}
 function setFocus(type,id){var key=type+':'+id,on=!(focus&&focus.type===type&&focus.id===id);focus=on?{type:type,id:id}:null;focusKey=key;render();
 var b=document.querySelector('[data-f="'+key+'"]');if(b)b.focus({preventScroll:true});
-if(on){var sc=document.querySelector('.scroll');if(sc){var r=sc.getBoundingClientRect();if(r.top>window.innerHeight-120||r.bottom<80)document.querySelector('.panel').scrollIntoView({behavior:'smooth',block:'start'})}}}
+if(on){toFocus(true);var sc=document.querySelector('.scroll');if(sc){var r=sc.getBoundingClientRect();if(r.top>window.innerHeight-120||r.bottom<80)document.querySelector('.panel').scrollIntoView({behavior:'smooth',block:'start'})}}}
 function toggle(tag,cls,key,pressed,fn){var e=el(editing?'span':tag,cls);if(!editing){e.type='button';e.setAttribute('aria-pressed',pressed?'true':'false');e.setAttribute('data-f',key);e.onclick=fn}return e}
 function renderCards(){
 var c=counts(),wrap=el('section','cards');
@@ -148,7 +152,7 @@ kind.onchange=function(){s.k=kind.value;if(lead(s.k)&&!s.t)s.t=S.teams[0].id;if(
 var tm=el('select');S.teams.forEach(function(t){var o=el('option','',t.name);o.value=t.id;if(t.id===s.t)o.selected=true;tm.appendChild(o)});
 tm.disabled=!lead(s.k);tm.onchange=function(){s.t=tm.value;render()};
 var tx=el('input');tx.type='text';tx.maxLength=40;tx.value=s.x||'';tx.placeholder=s.k==='a'?'שם הנציג/ה':'שם התפקיד';tx.disabled=s.k==='u';
-tx.oninput=function(){s.x=tx.value.trim();var old=document.querySelector('.scroll');old.parentNode.replaceChild(renderMap(),old);fit()};
+tx.oninput=function(){s.x=tx.value.trim();var old=document.querySelector('.scroll'),k=old.scrollLeft;old.parentNode.replaceChild(renderMap(),old);fit();document.querySelector('.scroll').scrollLeft=k};
 var done=el('button','btn','סיום');done.type='button';done.onclick=function(){sel=-1;render()};
 box.appendChild(field('סוג',kind));box.appendChild(field('צוות',tm));box.appendChild(field('טקסט בעמדה (לא חובה)',tx));box.appendChild(done);
 return box}
@@ -172,6 +176,7 @@ if(dl||!window.claude)bar.appendChild(btn('הורדה כקובץ HTML',false,dow
 if(status)bar.appendChild(el('span','status'+(statusErr?' err':''),status));
 return bar}
 function render(){
+var osc=document.querySelector('.scroll'),keep=osc?osc.scrollLeft:null;
 app.textContent='';
 var wrap=el('div','wrap'),head=el('header','head'),hl=el('div');
 hl.appendChild(el('div','eyebrow','מיפוי מוקד'));
@@ -187,13 +192,24 @@ var lg=el('div','legend');
 var nk={};S.slots.forEach(function(s){nk[s.k]=(nk[s.k]||0)+1});
 [['עמדות נציגים','background:color-mix(in srgb,var(--accent) 22%,var(--card))',nk.a||0],['עמדות מנהלי צוות','background:var(--accent)',nk.m||0],['אחמ״ש או מנהל/ת מוקד','background:var(--accent)'],['חדר או תפקיד מטה','border:1px solid var(--line2)'],['עמדה ללא שיוך','border:1px dashed var(--muted)']].forEach(function(x){var sp=el('span',x.length>2?'cnt':''),i=el('i');i.style.cssText=x[1];i.setAttribute('aria-hidden','true');sp.appendChild(i);if(x.length>2)sp.appendChild(el('b','',String(x[2])));sp.appendChild(document.createTextNode(x[0]));lg.appendChild(sp)});
 top.appendChild(lg);panel.appendChild(top);
-if(focus&&!editing){var fb=el('div','focus');fb.appendChild(el('span','','מודגש במפה: '));fb.lastChild.appendChild(el('b','',focusName()));fb.appendChild(btn('הצגת כל המפה',false,function(){focus=null;render()}));panel.appendChild(fb)}
+if(focus&&!editing){var fb=el('div','focus');fb.appendChild(el('span','','מודגש במפה: '));fb.lastChild.appendChild(el('b','',focusName()));fb.appendChild(btn('ביטול ההדגשה',false,function(){focus=null;render()}));panel.appendChild(fb)}
 if(editing)panel.appendChild(renderEditor());
-panel.appendChild(renderMap());wrap.appendChild(panel);
+var mb=el('div','mapbar');mb.appendChild(btn(overview?'הגדלת המפה':'הקטנה לכל הקומה',false,function(){overview=!overview;render();var s=document.querySelector('.scroll');if(s)s.scrollLeft=0;if(focus)toFocus(false)}));panel.appendChild(mb);
+panel.appendChild(renderMap());
+panel.appendChild(el('p','maphint',overview?'זו תצוגה מוקטנת של כל הקומה. ״הגדלת המפה״ מחזירה לגודל קריא.':'גוללים הצידה כדי לראות את כל הקומה.'));
+wrap.appendChild(panel);
 var upd=S.updated?new Date(S.updated+'T12:00:00').toLocaleDateString('he-IL'):'טרם עודכן';
 wrap.appendChild(el('footer','foot','הספירה כוללת נציגים בלבד, בלי מנהלי צוות ואחמ״שים. עודכן: '+upd));
-app.appendChild(wrap);document.title=S.title;fit()}
-function fit(){var sc=document.querySelector('.scroll');if(!sc)return;var w=sc.clientWidth-8;if(w>0)sc.firstChild.style.zoom=String(Math.min(1.6,w/1288))}
+app.appendChild(wrap);document.title=S.title;fit();
+if(keep!=null){var nsc=document.querySelector('.scroll');if(nsc)nsc.scrollLeft=keep}}
+function fit(){var sc=document.querySelector('.scroll');if(!sc)return;var w=sc.clientWidth-8;if(w<=0)return;
+var z=Math.min(1.6,w/1288),narrow=z<0.8,p=document.querySelector('.panel');if(p)p.classList.toggle('narrow',narrow);
+sc.firstChild.style.zoom=String(narrow&&!overview?0.8:z)}
+function toFocus(smooth){var sc=document.querySelector('.scroll');if(!sc||sc.scrollWidth<=sc.clientWidth+2)return;
+var hs=sc.querySelectorAll('.s:not(.dim)');if(!hs.length)return;var lo=Infinity,hi=-Infinity;
+for(var i=0;i<hs.length;i++){var r=hs[i].getBoundingClientRect();lo=Math.min(lo,r.left);hi=Math.max(hi,r.right)}
+var sr=sc.getBoundingClientRect(),d=hi-lo<=sr.width?(lo+hi)/2-(sr.left+sr.right)/2:hi-sr.right+16;
+sc.scrollBy({left:d,behavior:smooth?'smooth':'auto'})}
 function escHtml(t){return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 function buildDoc(){
 var css=document.getElementById('css').textContent,code=document.getElementById('code').textContent;
